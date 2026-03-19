@@ -12,8 +12,8 @@ class AccentModel:
     def __init__(self) -> None:
         pass
 
-    def load(self, path, provider=["CPUExecutionProvider"]):
-        self.session = InferenceSession(f"{path}/model.onnx", providers=provider)
+    def load(self, path, providers=["CPUExecutionProvider"]):
+        self.session = InferenceSession(f"{path}/model.onnx", providers=providers)
 
         with open(f"{path}/config.json", "r") as f:
             self.id2label = json.load(f)["id2label"]
