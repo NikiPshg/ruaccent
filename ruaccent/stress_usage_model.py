@@ -7,8 +7,8 @@ class StressUsagePredictorModel:
     def __init__(self) -> None:
         pass
 
-    def load(self, path, device="CPU"):
-        self.session = InferenceSession(f"{path}/model.onnx", providers=["CUDAExecutionProvider" if device == "CUDA" else "CPUExecutionProvider"])
+    def load(self, path, provider=["CPUExecutionProvider"]):
+        self.session = InferenceSession(f"{path}/model.onnx", providers=provider)
 
         with open(f"{path}/config.json", "r") as f:
             self.id2label = json.load(f)["id2label"]

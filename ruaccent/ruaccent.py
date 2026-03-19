@@ -46,7 +46,7 @@ class RUAccent:
         use_dictionary=False,
         custom_dict={},
         custom_homographs={},
-        device="CPU",
+        provider=["CPUExecutionProvider"],
         repo="ruaccent/accentuator",
         workdir=None,
         tiny_mode=False
@@ -91,16 +91,16 @@ class RUAccent:
         )
         self.omographs.update({"коса": ["к+оса", "кос+а"]})
         self.omographs.update(custom_homographs)
-        self.omograph_model.load(join_path(self.workdir, self.omograph_models_paths[omograph_model_size][1:]), device=device)
+        self.omograph_model.load(join_path(self.workdir, self.omograph_models_paths[omograph_model_size][1:]), provider=provider)
 
         self.yo_words = json.load(
             gzip.open(join_path(self.workdir, "dictionary","yo_words.json.gz"))
         ) 
-        self.accent_model.load(join_path(self.workdir, "nn","nn_accent/"), device=device)
+        self.accent_model.load(join_path(self.workdir, "nn","nn_accent/"), provider=provider)
         self.yo_homographs = json.load(
                 gzip.open(join_path(self.workdir, "dictionary","yo_homographs.json.gz"))
             ) 
-        self.yo_homograph_model.load(join_path(self.workdir, "nn","nn_yo_homograph_resolver"), device=device)
+        self.yo_homograph_model.load(join_path(self.workdir, "nn","nn_yo_homograph_resolver"), provider=provider)
 
         if self.tiny_mode or not use_dictionary:
             self.accents.update(json.load(
@@ -120,7 +120,7 @@ class RUAccent:
             from .rule_accent_engine import RuleEngine
             self.rule_accent = RuleEngine()
 
-            self.stress_usage_predictor.load(join_path(self.workdir, "nn","nn_stress_usage_predictor/"), device=device)
+            self.stress_usage_predictor.load(join_path(self.workdir, "nn","nn_stress_usage_predictor/"), provider=provider)
             self.rule_accent.load(join_path(self.workdir, "dictionary","rule_engine"))
 
 
