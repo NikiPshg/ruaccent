@@ -11,6 +11,7 @@ from .yo_homograph_model import YoHomographModel
 from .text_preprocessor import TextPreprocessor
 from .text_postprocessor import fix_capital
 import re
+from functools import lru_cache
 
 
 
@@ -235,20 +236,29 @@ class RUAccent:
         text = re.sub(self.normalize, "", text)
         sentences = TextPreprocessor.split_by_sentences(text)
         outputs = []
+        
         for sentence in sentences:
-            words, remaining_text = TextPreprocessor.split_by_words(sentence)
-            if len(words) == 0:
-                outputs.append("".join(remaining_text))
-                continue
-            stress_usages = self.extract_entities(self.stress_usage_predictor.predict_stress_usage(sentence)) if not self.tiny_mode else ["STRESS"] * len(text)            
-            processed_words = self._process_yo(words, sentence)
-            processed_words = self._process_omographs(processed_words)
-            processed_words = self._process_accent(processed_words, stress_usages)
-            processed_sentence = "".join([l+r for l,r in zip(remaining_text, processed_words)] + [remaining_text[-1]])
-            processed_sentence = self.delete_spaces_before_punc(processed_sentence)
-            
+            processed_sentence = self._process_sentence_cached(sentence)
             outputs.append(processed_sentence)
+            
         return "".join(outputs)
+
+    @lru_cache(maxsize=4096)
+    def _process_sentence_cached(self, sentence):
+        words, remaining_text = TextPreprocessor.split_by_words(sentence)
+        if len(words) == 0:
+            return "".join(remaining_text)
+            
+        stress_usages = self.extract_entities(self.stress_usage_predictor.predict_stress_usage(sentence)) if not self.tiny_mode else ["STRESS"] * len(words)            
+        
+        processed_words = self._process_yo(words, sentence)
+        processed_words = self._process_omographs(processed_words)
+        processed_words = self._process_accent(processed_words, stress_usages)
+        
+        processed_sentence = "".join([l+r for l, r in zip(remaining_text, processed_words)] + [remaining_text[-1]])
+        processed_sentence = self.delete_spaces_before_punc(processed_sentence)
+        
+        return processed_sentence
 
     def process_all(self, text, skip_regex=None):
         if skip_regex:
