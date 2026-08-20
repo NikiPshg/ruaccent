@@ -55,3 +55,8 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Model assets downloaded next to the package by pre-1.6 releases
+ruaccent/dictionary/
+ruaccent/nn/
+ruaccent/koziev/

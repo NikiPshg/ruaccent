@@ -1,54 +1,94 @@
 # RUAccent
 
-RUAccent - это библиотека для автоматической расстановки ударений на русском языке.
+RUAccent — библиотека для автоматической расстановки ударений (и восстановления «ё») в русском тексте.
+Форк [Den4ikAI/ruaccent](https://github.com/Den4ikAI/ruaccent), доведённый до состояния, пригодного для
+продакшена на CPU: без записи в `site-packages`, с воспроизводимой версией моделей, контролем потоков
+ONNX Runtime, кешем предложений и недеструктивным выводом (в тексте появляются только `+` и «ё»).
 
-**По вопросам коммерческого использования пишите на [telegram аккаунт](https://t.me/bceloss)**
+**По вопросам коммерческого использования моделей пишите автору оригинальной библиотеки: [telegram](https://t.me/bceloss).**
+
 ## Установка
-   С помощью pip
-   ```
-   pip install ruaccent
-   ```
-   С помощью GIT
-   ```
-   pip install git+https://github.com/Den4ikAI/ruaccent.git
-   ```
-## Параметры работы
 
-    load(omograph_model_size='turbo2', use_dictionary=True, custom_dict={}, device="CPU", workdir=None)
+```
+pip install git+https://github.com/NikiPshg/ruaccent@<commit>
+```
 
- - На данный момент доступно 6 моделей - **tiny**, **tiny2**, **tiny2.1**, **turbo2**, **turbo3**, **turbo3.1**, **turbo**, **big_poetry**.
- - Переменная **use_dictionary** отвечает за загрузку всего словаря (требуется больше ОЗУ), иначе все ударения расставляет нейросеть. 
- - Функция **custom_dict** отвечает за добавление своих вариантов ударений в словарь. Формат такой: `{'слово': 'сл+ово с удар+ением'}`
-- Выбор устройства CPU или CUDA. **Для работы с CUDA требуется установить onnxruntime-gpu и CUDA.**
-- workdir - принимает строку. Является путём, куда скачиваются модели.
-- tiny_mode - принимает True или False. При True отключает руловый пайплайн и часть моделей. Также не загружается словарь ударений.
+Зависимости: `onnxruntime`, `transformers`, `tokenizers`, `numpy`, `huggingface_hub`, `razdel`.
+Для CUDA поставьте `onnxruntime-gpu` (`pip install "ruaccent[gpu] @ ..."`) и передайте `providers`.
 
-    **Для стабильной работы требуется минимум 512 мегабайт ОЗУ (модель омографов - tiny)**
+## Использование
 
-## Пример использования
 ```python
 from ruaccent import RUAccent
 
 accentizer = RUAccent()
-cuda_id = 0
-provider = [
-            ("TensorrtExecutionProvider", {
-                "device_id": cuda_id,
-                "trt_max_workspace_size": 6 * 1024**3,
-                "trt_fp16_enable": True,
-                "trt_engine_cache_enable": True,
-                "trt_engine_cache_path": f".cache/trt_cache_{cuda_id}",  
-            }),
-            ("CUDAExecutionProvider", {"device_id": cuda_id}),
-        ]
-accentizer.load(omograph_model_size='turbo3.1', use_dictionary=True, tiny_mode=False, provider=provider)
+accentizer.load(
+    omograph_model_size="turbo3.1",   # tiny | tiny2 | tiny2.1 | turbo | turbo2 | turbo3 | turbo3.1 | small_poetry | medium_poetry | big_poetry
+    use_dictionary=True,              # полный словарь ударений (~+0.7 ГБ RAM), иначе только нейросети
+    tiny_mode=False,                  # True: без предсказателя «нужно ли ударение» и без словаря
+    num_threads=1,                    # потоки ONNX Runtime на сессию (см. ниже)
+    workdir="/models/ruaccent",       # куда скачать модели; по умолчанию ~/.cache/ruaccent
+)
 
-text = 'на двери висит замок.'
-print(accentizer.process_all(text))
+print(accentizer.process_all("на двери висит замок."))
+# на двер+и вис+ит зам+ок.
 ```
 
-Файлы моделей и словарей располагаются по [ссылке](https://huggingface.co/ruaccent/accentuator). Мы будем признательны фидбеку на [telegram аккаунт](https://t.me/bceloss)
+### Параметры `load`
 
-## Донат
-Вы можете поддержать проект деньгами. Это поможет быстрее разрабатывать более качественные новые версии. 
-CloudTips: https://pay.cloudtips.ru/p/b9d86686
+| параметр | по умолчанию | смысл |
+|---|---|---|
+| `omograph_model_size` | `turbo2` | модель снятия омографии (`turbo3.1` — лучшая, 368 МБ; `tiny2.1` — 43 МБ) |
+| `use_dictionary` | `False` | полный словарь ударений вместо `accents_nn` |
+| `custom_dict` | `None` | свои ударения: `{"слово": "сл+ово"}` |
+| `custom_homographs` | `None` | свои омографы: `{"замок": ["з+амок", "зам+ок"]}` |
+| `providers` | `["CPUExecutionProvider"]` | execution providers ONNX Runtime, например `[("CUDAExecutionProvider", {"device_id": 0})]` |
+| `num_threads` | `None` (все ядра) | `intra_op_num_threads` каждой сессии. **В проде ставьте `1`**: задержка на предложение та же (~7 мс на M-серии), CPU меньше в 10+ раз |
+| `session_options` | `None` | готовый `onnxruntime.SessionOptions` вместо `num_threads` |
+| `repo` / `revision` | `ruaccent/accentuator` @ закреплённый коммит | откуда и какую ревизию моделей качать; `revision="main"` — всегда последние |
+| `workdir` | `$RUACCENT_WORKDIR` → `~/.cache/ruaccent` | каталог моделей; пакет никогда не пишет в свою папку |
+| `tiny_mode` | `False` | облегчённый режим |
+| `token` | `None` | токен Hugging Face (репозиторий моделей публичный) |
+| `local_files_only` | `False` | не ходить в сеть; упасть, если моделей нет |
+
+Модели скачиваются один раз через `huggingface_hub.snapshot_download` (докачка при обрыве, проверка по
+метаданным). Если при следующем запуске сети нет, а файлы на месте — библиотека работает с локальной копией.
+
+### Кеш
+
+Результат для каждого предложения кешируется (`functools.lru_cache`, по умолчанию 4096 записей,
+`RUAccent(cache_size=...)`). Ключ — предложение без окружающих пробелов, поэтому одна и та же фраза в
+начале текста и внутри него даёт попадание. Кеш потокобезопасен; `process_all` можно звать из нескольких
+потоков параллельно (ONNX Runtime сессии потокобезопасны). `accentizer.cache_info()` / `accentizer.clear_cache()`.
+
+### Что делает с текстом
+
+`process_all` возвращает исходный текст, в который добавлены `+` перед ударной гласной и восстановлена «ё».
+Пунктуация, цифры, латиница, символы (`% № " … – /`), пробелы и переносы сохраняются как есть; удаляются
+только управляющие и zero-width символы. Слова, уже содержащие `+`, не трогаются — можно подавать текст
+с ручными ударениями. `skip_regex` защищает совпавшие фрагменты от обработки целиком.
+
+`process_yo(text)` — только восстановление «ё».
+
+## Ресурсы (CPU, turbo3.1)
+
+| конфигурация | RSS | загрузка |
+|---|---|---|
+| `use_dictionary=True` | ~2.0 ГБ | ~3 с |
+| `use_dictionary=False` | ~1.3 ГБ | ~2 с |
+| `tiny_mode=True` | ~0.8 ГБ | <1 с |
+
+Холодное предложение — 5–7 мс на одном потоке, попадание в кеш — 0.05 мс.
+
+## Отличия от upstream (1.6.0)
+
+- модели и словари качаются в `workdir`, а не в `site-packages`; работает от непривилегированного пользователя;
+- закреплённая ревизия моделей, `snapshot_download` вместо пофайлового скачивания;
+- убраны неиспользуемые rule-engine и koziev (−200 МБ на диске, −550 МБ RAM, −`python-crfsuite`);
+- `num_threads` / `session_options` для ONNX Runtime;
+- недеструктивный вывод: больше не вырезаются `" % № … – + /` и т. п., не схлопываются пробелы перед скобками;
+- исправлено смещение предсказаний ударений/«ё» после слитной пунктуации (`», ),`);
+- кеш на инстанс, ключ без окружающих пробелов, `cache_info()`/`clear_cache()`;
+- `pyproject.toml` как единственный источник метаданных, тесты (`pytest`, `pytest --models`), CI.
+
+Файлы моделей и словарей: [huggingface.co/ruaccent/accentuator](https://huggingface.co/ruaccent/accentuator).
