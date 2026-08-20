@@ -9,8 +9,12 @@ class OmographModel:
         self.special_words = ['балчуга', 'вертела', 'волоки', 'волоку', 'воронью', 'выбродите', 'вывозите', 'выносите', 'выноситесь', 'выходите', 'железы', 'начала', 'округа', 'перепела', 'развитая', 'развитого', 'развитое', 'развитой', 'развитом', 'развитому', 'развитою', 'развитую', 'развитые', 'развитым', 'развитыми', 'развитых', 'сторожа', 'сторожи', 'сторожу', 'удало', 'начался', 'началась', 'началось', 'бутиках', 'ожила', 'создало', 'коротки', 'проклята', 'роженица', 'роженицы', 'рожениц', 'роженице', 'роженицам', 'роженицу', 'роженицей', 'роженицею', 'роженицами', 'роженицах', 'пристава', 'приставов', 'приставам', 'приставами', 'приставах', 'пережитое', 'пережитого', 'пережитые', 'пережитых', 'пережитому', 'пережитым', 'пережитыми', 'пережитом', 'нипоняла']
 
 
-    def load(self, path, providers  =["CPUExecutionProvider"]):
-        self.session = InferenceSession(f"{path}/model.onnx", providers=providers)
+    def load(self, path, providers=None, sess_options=None):
+        self.session = InferenceSession(
+            f"{path}/model.onnx",
+            sess_options=sess_options,
+            providers=providers or ["CPUExecutionProvider"],
+        )
         self.tokenizer = AutoTokenizer.from_pretrained(path)
         
     def softmax(self, x):

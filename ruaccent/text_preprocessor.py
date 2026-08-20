@@ -2,22 +2,39 @@ import re
 from razdel import sentenize
 from razdel.substring import Substring
 
+
 class TextPreprocessor:
+    # A word is a run of word characters that may carry "+" stress marks inside or in
+    # front of it ("зам+ок", "+он"); everything that is neither a word character nor
+    # whitespace is a punctuation run.
+    TOKEN_RE = re.compile(r"\w*(?:\+\w+)+|\w+|[^\w\s]+")
+
+    @staticmethod
+    def tokenize(string):
+        """Split a sentence into (tokens, gaps, spans).
+
+        ``tokens`` are words and punctuation runs, ``spans`` their ``(start, end)``
+        offsets in ``string`` and ``gaps`` the ``len(tokens) + 1`` pieces of text
+        between them, so that ``"".join(g + t for g, t in zip(gaps, tokens)) + gaps[-1]``
+        reproduces ``string`` exactly.
+        """
+        tokens, spans, gaps = [], [], []
+        last = 0
+        for match in TextPreprocessor.TOKEN_RE.finditer(string):
+            tokens.append(match.group(0))
+            spans.append((match.start(), match.end()))
+            gaps.append(string[last:match.start()])
+            last = match.end()
+        gaps.append(string[last:])
+        return tokens, gaps, spans
+
     @staticmethod
     def split_by_words(string):
-        string = string.replace(" - ",' ~ ')
-        match = list(re.finditer(r"\w*(?:\+\w+)*|[^\w\s]+", string.lower()))
-        remaining_text =  [string[l.end():r.start()] for l,r in zip(match, match[1:])]
-
-        words = [string[x.start():x.end()] for x in match]
-        words_mask = [i for i, w  in enumerate(words) if w]
-        
-        valid_words = [words[i] for i in words_mask]
-        if len(words_mask) == 0:
-            return valid_words, ["", ""]
-        remaining_text_res = ["".join(remaining_text[:words_mask[0]])] + ["".join(remaining_text[l+1:r]) for l, r in zip(words_mask, words_mask[1:])]
-        remaining_text_res.append("".join(remaining_text[words_mask[-1]+1:]))
-        return valid_words, remaining_text_res
+        """Backwards compatible ``(words, remaining_text)`` view of :meth:`tokenize`."""
+        tokens, gaps, _ = TextPreprocessor.tokenize(string)
+        if not tokens:
+            return tokens, ["", ""]
+        return tokens, gaps
 
     @staticmethod
     def split_by_sentences(string):

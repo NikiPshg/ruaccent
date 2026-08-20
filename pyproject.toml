@@ -5,20 +5,42 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "ruaccent"
 authors = [{name = "Denis Petrov", email = "arduino4b@gmail.com"}]
+maintainers = [{name = "Nikita Vasilev"}]
 readme = "README.md"
 license = {file = "LICENSE"}
-classifiers = ["License :: OSI Approved :: Apache Software License"]
+requires-python = ">=3.10"
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Natural Language :: Russian",
+    "Topic :: Text Processing :: Linguistic",
+]
 dynamic = ["version", "description"]
 
 dependencies = [
-    "huggingface_hub",
-    "onnxruntime",
-    "transformers",
-    "sentencepiece",
-    "numpy",
-    "python-crfsuite",
-    "razdel"
+    "huggingface_hub>=0.23",
+    "onnxruntime>=1.16",
+    "transformers>=4.40",
+    "tokenizers>=0.19",
+    "numpy>=1.24",
+    "razdel>=0.5",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8"]
+gpu = ["onnxruntime-gpu>=1.16"]
+
 [project.urls]
-Home = "https://github.com/Den4ikAI/ruaccent"
+Home = "https://github.com/NikiPshg/ruaccent"
+Upstream = "https://github.com/Den4ikAI/ruaccent"
+Models = "https://huggingface.co/ruaccent/accentuator"
+
+[tool.flit.sdist]
+include = ["tests/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
