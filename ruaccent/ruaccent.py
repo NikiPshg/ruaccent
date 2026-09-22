@@ -293,11 +293,45 @@ class RUAccent:
                 words[i] = fix_capital(word, self.yo_homographs.get(lower_word, word))
         return words
 
+    @staticmethod
+    def _first_word_index(words):
+        """Index of the first word token of the sentence (punctuation runs such as an
+        opening quote or a dash are skipped), or ``None``."""
+        for i, word in enumerate(words):
+            if any(char.isalpha() for char in word):
+                return i
+        return None
+
+    @staticmethod
+    def _restore_case(source, stressed):
+        """Copy the letter case of ``source`` onto ``stressed`` (``source`` plus "+"
+        marks): ``("Звонок", "звон+ок") -> "Звон+ок"``."""
+        letters = iter(source)
+        out = []
+        for char in stressed:
+            if char == "+":
+                out.append(char)
+                continue
+            src = next(letters, char)
+            out.append(char.upper() if src.isupper() else char.lower())
+        return "".join(out)
+
     def _process_omographs(self, words):
         found = []
         hypotheses = []
+        # The homograph dictionary is keyed in lower case, so a capitalized homograph
+        # used to miss it and fall through to the plain accent dictionary. That hurts
+        # the first word of a sentence ("Звонок", "После", "Потом"), whose capital is
+        # only positional. Mid-sentence capitals are left alone: there they mark names
+        # and brands ("МФК Кредит"), and lower-casing them does more harm than good.
+        first = self._first_word_index(words)
+        folded = set()
         for i, word in enumerate(words):
             variants = self.omographs.get(word)
+            if not variants and i == first and word != word.lower():
+                variants = self.omographs.get(word.lower())
+                if variants:
+                    folded.add(i)
             if variants:
                 found.append((i, variants))
                 hypotheses.append(variants)
@@ -306,8 +340,12 @@ class RUAccent:
 
         texts_batch = []
         for position, variants in found:
-            marked = list(words)
-            marked[position] = " <w>" + words[position] + "</w> "
+            # The classifier was trained on unmarked text: "+" marks that a caller or
+            # a replacement dictionary put into other words must not reach it, or they
+            # shift its choice for the neighbouring homographs.
+            marked = [word.replace("+", "") for word in words]
+            target = words[position].lower() if position in folded else words[position]
+            marked[position] = " <w>" + target + "</w> "
             # Context text in the exact shape the homograph classifier was trained on.
             context = self.delete_spaces_before_punc(" ".join(marked).replace(" - ", " ~ "))
             texts_batch.extend([context] * len(variants))
@@ -315,7 +353,7 @@ class RUAccent:
         num_hypotheses = [len(variants) for variants in hypotheses]
         classified = self.omograph_model.classify(texts_batch, hypotheses_batch, num_hypotheses)
         for (position, _variants), choice in zip(found, classified):
-            words[position] = choice
+            words[position] = self._restore_case(words[position], choice) if position in folded else choice
         return words
 
     def _process_accent(self, words, stress_usages):
