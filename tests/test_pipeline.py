@@ -107,6 +107,49 @@ def test_omograph_choice(acc):
     assert acc.process_all("мука") == "м+ука"
 
 
+class RecordingOmograph(FakeOmograph):
+    """Picks the last hypothesis (so the result differs from the accent dictionary)
+    and remembers the contexts it was given."""
+
+    def __init__(self):
+        self.texts = []
+
+    def classify(self, texts, hypotheses, num_hypotheses):
+        self.texts.extend(texts)
+        out, i = [], 0
+        for n in num_hypotheses:
+            out.append(hypotheses[i + n - 1])
+            i += n
+        return out
+
+
+def test_sentence_initial_omograph_goes_to_classifier(acc):
+    # The capital of the first word is positional: the homograph must still be
+    # resolved by the classifier, with its case restored afterwards.
+    acc.omograph_model = RecordingOmograph()
+    acc.omographs = {"звонок": ["зв+онок", "звон+ок"], "после": ["посл+е", "п+осле"]}
+    acc.accents = {"звонок": "зв+онок", "после": "посл+е"}
+    assert acc.process_all("Звонок был.") == "Звон+ок был."
+    assert acc.process_all("«После обеда» — да.").startswith("«П+осле")
+    assert acc.process_all("ЗВОНОК.") == "ЗВОН+ОК."
+    assert any("<w>звонок</w>" in text for text in acc.omograph_model.texts)
+
+
+def test_mid_sentence_capital_is_not_folded(acc):
+    # Mid-sentence capitals mark names and brands: they keep the old behaviour.
+    acc.omograph_model = RecordingOmograph()
+    acc.omographs = {"кредит": ["кр+едит", "кред+ит"]}
+    acc.accents = {"кредит": "кред+ит"}
+    assert acc.process_all("Это МФК Кредит.").endswith("Кред+ит.")
+    assert acc.omograph_model.texts == []
+
+
+def test_restore_case():
+    assert RUAccent._restore_case("Звонок", "звон+ок") == "Звон+ок"
+    assert RUAccent._restore_case("ЕДЫ", "ед+ы") == "ЕД+Ы"
+    assert RUAccent._restore_case("после", "п+осле") == "п+осле"
+
+
 def test_whitespace_and_sentences_preserved(acc):
     src = "  Первое.   Второе?\nТретье  "
     out = acc.process_all(src)

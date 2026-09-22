@@ -1,6 +1,6 @@
 """Russian accentizer: puts "+" stress marks into Russian text using ONNX models."""
 
-__version__ = "1.6.0"
+__version__ = "1.6.1"
 
 from .ruaccent import DEFAULT_REPO, DEFAULT_REVISION, OMOGRAPH_MODELS, RUAccent
 
