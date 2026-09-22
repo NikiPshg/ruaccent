@@ -340,7 +340,10 @@ class RUAccent:
 
         texts_batch = []
         for position, variants in found:
-            marked = list(words)
+            # The classifier was trained on unmarked text: "+" marks that a caller or
+            # a replacement dictionary put into other words must not reach it, or they
+            # shift its choice for the neighbouring homographs.
+            marked = [word.replace("+", "") for word in words]
             target = words[position].lower() if position in folded else words[position]
             marked[position] = " <w>" + target + "</w> "
             # Context text in the exact shape the homograph classifier was trained on.

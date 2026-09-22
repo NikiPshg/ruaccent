@@ -213,3 +213,10 @@ def test_default_workdir_is_not_package_dir(monkeypatch, tmp_path):
     assert RUAccent.default_workdir() == str(tmp_path / "ruaccent")
     monkeypatch.setenv("RUACCENT_WORKDIR", "/srv/ruaccent")
     assert RUAccent.default_workdir() == "/srv/ruaccent"
+
+
+def test_premarked_words_do_not_reach_the_classifier_context(acc):
+    acc.omograph_model = RecordingOmograph()
+    acc.omographs = {"мука": ["м+ука", "мук+а"]}
+    acc.process_all("В л+ичном кабинете мука.")
+    assert acc.omograph_model.texts and all("+" not in text for text in acc.omograph_model.texts)
