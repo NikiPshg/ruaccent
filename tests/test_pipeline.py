@@ -1,5 +1,7 @@
 """Pipeline logic with stubbed models: no downloads, no ONNX."""
 
+import logging
+import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
@@ -220,3 +222,63 @@ def test_premarked_words_do_not_reach_the_classifier_context(acc):
     acc.omographs = {"мука": ["м+ука", "мук+а"]}
     acc.process_all("В л+ичном кабинете мука.")
     assert acc.omograph_model.texts and all("+" not in text for text in acc.omograph_model.texts)
+
+
+def test_control_tags_pass_through(acc):
+    src = 'Банк и <emph>замок</emph>, и <pause/> дверь<break time="1s"/>.'
+    assert acc.process_all(src) == 'Б+анк и <emph>зам+ок</emph>, и <pause/> дверь<break time="1s"/>.'
+
+
+def test_control_tags_never_get_stress_marks(acc):
+    assert acc.process_all('<voice name="Замок">банк</voice>') == '<voice name="Замок">б+анк</voice>'
+
+
+def test_control_tags_match_untagged_output(acc):
+    src = "«<emph>Сбербанк</emph>», как и <emph>банк</emph>, закрыл <pause/>договор. <emph>Еще</emph> раз?"
+    assert re.sub(r"<[^<>]*>", "", acc.process_all(src)) == acc.process_all(re.sub(r"<[^<>]*>", "", src))
+
+
+def test_control_tags_keep_model_context_clean(acc):
+    acc.omograph_model = RecordingOmograph()
+    acc.omographs = {"звонок": ["зв+онок", "звон+ок"]}
+    acc.accents = {"звонок": "зв+онок"}
+    seen = []
+    predict = acc.stress_usage_predictor.predict_stress_usage
+    acc.stress_usage_predictor.predict_stress_usage = lambda text: seen.append(text) or predict(text)
+    # the sentence-initial homograph is still found behind the opening tag
+    assert acc.process_all("<emph>Звонок</emph> был.") == "<emph>Звон+ок</emph> был."
+    assert seen == ["Звонок был."]
+    assert acc.omograph_model.texts and all("emph" not in text for text in acc.omograph_model.texts)
+    # without protection "emph" is the first word of the sentence and the homograph is missed
+    assert acc.process_all("<emph>Звонок</emph> был.", protect_tags=False) == "<emph>Зв+онок</emph> был."
+    assert "<emph>Звонок</emph> был." in seen
+
+
+def test_control_tag_goes_before_the_stress_mark(acc):
+    # the fake model stresses the first vowel
+    assert acc.process_all("Это <emph>окно</emph>.") == "+Это <emph>+окно</emph>."
+    assert acc.process_all("<emph>Зам+ок</emph> уже стоит.") == "<emph>Зам+ок</emph> +уже ст+оит."
+
+
+def test_restore_tags():
+    clean, tags = RUAccent._split_tags("<emph>все</emph> <pause/><x>он</x>")
+    assert clean == "все он"
+    assert RUAccent._restore_tags(clean, "вс+ё +он", tags) == "<emph>вс+ё</emph> <pause/><x>+он</x>"
+    assert RUAccent._restore_tags(clean, "все он!", tags) is None
+
+
+def test_glued_standalone_tag_keeps_words_apart(acc):
+    assert RUAccent._split_tags("банк<pause/>замок")[0] == "банк замок"
+    assert RUAccent._split_tags("по<emph>чему</emph>")[0] == "почему"
+    assert acc.process_all("Банк<pause/>замок, банк<br/>.") == "Б+анк<pause/>зам+ок, б+анк<br/>."
+
+
+def test_control_tags_realign_failure_returns_clean_text(acc, caplog):
+    acc.process_all_internal = lambda text: text.upper()
+    with caplog.at_level(logging.WARNING, logger="ruaccent.ruaccent"):
+        assert acc.process_all("<emph>банк</emph>.") == "БАНК."
+    assert "control tag" in caplog.text
+
+
+def test_process_yo_keeps_control_tags(acc):
+    assert acc.process_yo("<emph>еще</emph> раз") == "<emph>ещё</emph> раз"
