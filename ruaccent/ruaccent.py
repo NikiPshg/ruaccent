@@ -47,6 +47,13 @@ STRESS_USAGE_MODEL_DIR = "nn/nn_stress_usage_predictor"
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f\u200b-\u200d\u2060\ufeff]")
 _VOWELS = "аеёиоуыэюяАЕЁИОУЫЭЮЯ"
 _PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+# XML-like control tags for the TTS model (``<emph>``, ``</emph>``, ``<pause/>``,
+# ``<break time="1s"/>``). They are markup, not text: tokenized as words and punctuation
+# they reach the stress-usage, ё and homograph models as garbage context and shift
+# their predictions for the neighbouring words (and for the tagged word itself).
+_CONTROL_TAG = re.compile(r"</?[a-zA-Z_][a-zA-Z0-9_:-]*(?:\s[^<>]*)?/?>")
+_WORD_CHAR = re.compile(r"\w")
+_YO_OF = {"е": "ё", "Е": "Ё"}
 
 
 class RUAccent:
@@ -280,6 +287,67 @@ class RUAccent:
                 labels.append(default)
         return labels
 
+    @staticmethod
+    def _split_tags(text):
+        """``text`` without control tags and the ``(offset, tag, spaced)`` list that puts
+        them back; offsets point into the text without tags. A standalone tag glued
+        between two words (``слово<pause/>слово``) leaves a space there (``spaced``) so
+        the words stay apart; other tags take no room (``по<emph>чему</emph>``)."""
+        pieces, tags = [], []
+        last = shift = 0
+        for match in _CONTROL_TAG.finditer(text):
+            pieces.append(text[last : match.start()])
+            spaced = (
+                match.group(0).endswith("/>")
+                and match.start() > 0
+                and _WORD_CHAR.match(text, match.start() - 1) is not None
+                and _WORD_CHAR.match(text, match.end()) is not None
+            )
+            if spaced:
+                pieces.append(" ")
+            tags.append((match.start() - shift, match.group(0), spaced))
+            shift += match.end() - match.start() - (1 if spaced else 0)
+            last = match.end()
+        pieces.append(text[last:])
+        return "".join(pieces), tags
+
+    @staticmethod
+    def _restore_tags(clean, processed, tags):
+        """Re-insert ``tags`` (from :meth:`_split_tags`) into ``processed``, which must be
+        ``clean`` plus "+" marks and "ё"; ``None`` if the two do not line up.
+
+        A tag goes right after the character that preceded it in the input, i.e. in
+        front of the "+" of a stressed first vowel: ``<emph>+он</emph>``.
+        """
+        after = [0] * (len(clean) + 1)  # after[i]: offset in ``processed`` past clean[:i]
+        i = 0
+        for j, char in enumerate(processed):
+            if i < len(clean) and (char == clean[i] or char == _YO_OF.get(clean[i])):
+                i += 1
+                after[i] = j + 1
+            elif char != "+":
+                return None
+        if i != len(clean):
+            return None
+        out, last = [], 0
+        for offset, tag, spaced in tags:
+            out.append(processed[last : after[offset]] + tag)
+            last = after[offset + 1] if spaced else after[offset]
+        out.append(processed[last:])
+        return "".join(out)
+
+    def _process_tagged(self, text, process):
+        """Run ``process`` on ``text`` without its control tags, so the models and the
+        dictionaries see the clean sentence, then put the tags back where they were."""
+        text = _CONTROL_CHARS.sub("", text)
+        clean, tags = self._split_tags(text)
+        processed = process(clean)
+        restored = self._restore_tags(clean, processed, tags)
+        if restored is None:
+            logger.warning("ruaccent: cannot re-insert %d control tag(s), returning the text without them", len(tags))
+            return processed
+        return restored
+
     # ---------------------------------------------------------------- pipeline
     def _process_yo(self, words, lower_core, spans, plus_before):
         yo_labels = None
@@ -409,8 +477,11 @@ class RUAccent:
             return text
         return "".join(self._process_sentence_keyed(sentence) for sentence in sentences)
 
-    def process_yo(self, text):
-        """Only restore "ё" (dictionary + homograph model); no stress marks."""
+    def process_yo(self, text, protect_tags=True):
+        """Only restore "ё" (dictionary + homograph model); no stress marks. Control
+        tags are handled as in :meth:`process_all`."""
+        if protect_tags and _CONTROL_TAG.search(text):
+            return self._process_tagged(text, lambda clean: self.process_yo(clean, protect_tags=False))
         text = _CONTROL_CHARS.sub("", text)
         outputs = []
         for sentence in TextPreprocessor.split_by_sentences(text):
@@ -424,13 +495,20 @@ class RUAccent:
             outputs.append("".join(gap + word for gap, word in zip(gaps, words)) + gaps[-1])
         return "".join(outputs) if outputs else text
 
-    def process_all(self, text, skip_regex=None):
+    def process_all(self, text, skip_regex=None, protect_tags=True):
         """Put stress marks ("+" before the stressed vowel) into ``text``.
 
         ``skip_regex`` protects matching spans from processing (they are copied to
         the output verbatim). Text that already carries "+" marks keeps them: marked
         words are never re-stressed.
+
+        Control tags (``<emph>``, ``</emph>``, ``<pause/>``, ``<break time="1s"/>``) are
+        copied to the output at the same positions and never get "+" marks; the words
+        between them are stressed exactly as in the text without the tags.
+        ``protect_tags=False`` processes them as plain text, as earlier versions did.
         """
+        if protect_tags and _CONTROL_TAG.search(text):
+            return self._process_tagged(text, lambda clean: self.process_all(clean, skip_regex, protect_tags=False))
         if not skip_regex:
             return self.process_all_internal(text)
 
