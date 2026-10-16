@@ -360,10 +360,12 @@ class RUAccent:
         for i, word in enumerate(words):
             if "+" in word:
                 continue
-            if stress_usages[i] != "STRESS":
-                continue
             lower_word = word.lower()
             stressed_word = self.accents.get(lower_word, lower_word)
+            # The usage model may call an already-spelled "ё" unstressed, even
+            # when the dictionary explicitly marks that vowel for speech.
+            if stress_usages[i] != "STRESS" and "+ё" not in stressed_word:
+                continue
             if stressed_word == lower_word and not self.has_punctuation(lower_word) and self.count_vowels(lower_word) > 1:
                 words[i] = self.accent_model.put_accent(word)
             else:
