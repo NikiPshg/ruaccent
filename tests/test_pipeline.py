@@ -103,6 +103,15 @@ def test_yo_restoration(acc):
     assert acc.process_all("еще раз") == "+ещё раз"  # "раз": one vowel, untouched
 
 
+def test_explicit_yo_keeps_dictionary_stress_when_usage_model_skips_it(acc):
+    acc.accents["займёт"] = "займ+ёт"
+    acc.stress_usage_predictor.predict_stress_usage = lambda text: _entities(
+        text, ["NO_STRESS", "NO_STRESS", "PUNCT"]
+    )
+
+    assert acc.process_all("Займёт банк.") == "Займ+ёт банк."
+
+
 def test_omograph_choice(acc):
     assert acc.process_all("мука") == "м+ука"
 
