@@ -11,6 +11,7 @@ from huggingface_hub import snapshot_download
 
 from .accent_model import AccentModel
 from .omograph_model import OmographModel
+from .stress_overrides import FORCED_STRESS
 from .stress_usage_model import StressUsagePredictorModel
 from .text_postprocessor import fix_capital
 from .text_preprocessor import TextPreprocessor
@@ -361,10 +362,11 @@ class RUAccent:
             if "+" in word:
                 continue
             lower_word = word.lower()
-            stressed_word = self.accents.get(lower_word, lower_word)
+            forced_stress = FORCED_STRESS.get(lower_word)
+            stressed_word = forced_stress or self.accents.get(lower_word, lower_word)
             # The usage model may call an already-spelled "ё" unstressed, even
             # when the dictionary explicitly marks that vowel for speech.
-            if stress_usages[i] != "STRESS" and "+ё" not in stressed_word:
+            if stress_usages[i] != "STRESS" and forced_stress is None and "+ё" not in stressed_word:
                 continue
             if stressed_word == lower_word and not self.has_punctuation(lower_word) and self.count_vowels(lower_word) > 1:
                 words[i] = self.accent_model.put_accent(word)
