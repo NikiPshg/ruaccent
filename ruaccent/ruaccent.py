@@ -361,6 +361,11 @@ class RUAccent:
             if "+" in word:
                 continue
             lower_word = word.lower()
+            # "номер" is always stressed on о; the usage model can wrongly
+            # suppress it even when the accent dictionary has the right form.
+            if lower_word == "номер":
+                words[i] = word[:1] + "+" + word[1:]
+                continue
             stressed_word = self.accents.get(lower_word, lower_word)
             # The usage model may call an already-spelled "ё" unstressed, even
             # when the dictionary explicitly marks that vowel for speech.
